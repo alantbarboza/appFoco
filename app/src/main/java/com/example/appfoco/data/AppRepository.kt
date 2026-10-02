@@ -30,7 +30,7 @@ fun formatToBrazilianDate(dateStr: String?): String {
         } else {
             dateStr
         }
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         dateStr
     }
 }
@@ -83,8 +83,12 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
 
             val date = try {
                 SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(currentDate)
-            } catch (e: Exception) {
-                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(currentDate)
+            } catch (_: Exception) {
+                try {
+                    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(currentDate)
+                } catch (_: Exception) {
+                    Date()
+                }
             } ?: Date()
 
             val cal = Calendar.getInstance()
@@ -99,40 +103,70 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
             var lostCountIncrement = 0
 
             for (of in allOfensivas) {
-                val lastActiveRaw = of.lastActiveDate ?: currentDate
-                val lastActive = formatToBrazilianDate(lastActiveRaw)
-                val lastActiveDateObj = try {
-                    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(lastActive)
-                } catch (e: Exception) {
-                    Date()
-                } ?: Date()
+                val habits = dao.getHabitsForOfensiva(of.id)
+                val tasks = dao.getTasksForOfensivaAndDate(of.id, currentDate)
+                val rules = dao.getRulesForOfensiva(of.id)
 
-                val diffInMillis = cal.time.time - lastActiveDateObj.time
-                val daysBetween = diffInMillis / (1000 * 60 * 60 * 24)
+                val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
 
-                if (daysBetween > 1) {
-                    if (of.streakCount > 0 && of.isAlive) {
-                        lostCountIncrement++
-                    }
-                    dao.insertOrUpdateOfensiva(
-                        of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
-                    )
-                } else if (daysBetween >= 1L) {
-                    val completedYesterday = of.lastProgressDate == lastActive
-                    if (completedYesterday) {
-                        dao.insertOrUpdateOfensiva(
-                            of.copy(isAlive = false, lastActiveDate = newDate)
-                        )
-                    } else {
-                        if (of.streakCount > 0 && of.isAlive) {
+                if (isProhibitedOnly) {
+                    val ruleLogs = dao.getRuleLogsForDate(currentDate)
+                    val ruleBroken = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
+                    if (ruleBroken) {
+                        if (of.streakCount > 0) {
                             lostCountIncrement++
                         }
                         dao.insertOrUpdateOfensiva(
                             of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
                         )
+                    } else {
+                        val newStreak = of.streakCount + 1
+                        dao.insertOrUpdateOfensiva(
+                            of.copy(
+                                streakCount = newStreak,
+                                highestStreak = maxOf(of.highestStreak, newStreak),
+                                isAlive = true,
+                                lastProgressDate = newDate,
+                                lastActiveDate = newDate
+                            )
+                        )
                     }
                 } else {
-                    dao.insertOrUpdateOfensiva(of.copy(lastActiveDate = newDate))
+                    val lastActiveRaw = of.lastActiveDate ?: currentDate
+                    val lastActive = formatToBrazilianDate(lastActiveRaw)
+                    val lastActiveDateObj = try {
+                        SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(lastActive)
+                    } catch (_: Exception) {
+                        Date()
+                    } ?: Date()
+
+                    val diffInMillis = cal.time.time - lastActiveDateObj.time
+                    val daysBetween = diffInMillis / (1000 * 60 * 60 * 24)
+
+                    if (daysBetween > 1) {
+                        if (of.streakCount > 0) {
+                            lostCountIncrement++
+                        }
+                        dao.insertOrUpdateOfensiva(
+                            of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
+                        )
+                    } else if (daysBetween >= 1L) {
+                        val completedYesterday = of.lastProgressDate == lastActive
+                        if (completedYesterday) {
+                            dao.insertOrUpdateOfensiva(
+                                of.copy(isAlive = false, lastActiveDate = newDate)
+                            )
+                        } else {
+                            if (of.streakCount > 0) {
+                                lostCountIncrement++
+                            }
+                            dao.insertOrUpdateOfensiva(
+                                of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
+                            )
+                        }
+                    } else {
+                        dao.insertOrUpdateOfensiva(of.copy(lastActiveDate = newDate))
+                    }
                 }
             }
 
@@ -142,8 +176,7 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
             }
 
             notifyWidgetUpdate()
-        } catch (e: Exception) {
-            // fallback
+        } catch (_: Exception) {
         }
     }
 

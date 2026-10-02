@@ -151,14 +151,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private suspend fun incrementLostCount() {
-        try {
-            val settings = dao.getSettings() ?: AppSettingsEntity()
-            dao.insertOrUpdateSettings(settings.copy(totalLostOfensivasCount = settings.totalLostOfensivasCount + 1))
-        } catch (_: Exception) {
-        }
-    }
-
     fun setDevModeActive(isActive: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -212,6 +204,7 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 repository.devAdvanceDays(days)
+                dao.getAllOfensivas().forEach { evaluateOfensivaProgress(it.id) }
                 refreshHistoryData()
             } catch (_: Exception) {
             }
@@ -421,9 +414,8 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 val anyRuleBroken = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
 
                 if (anyRuleBroken) {
-                    if (ofensiva.streakCount > 0 && ofensiva.isAlive) {
-                        incrementLostCount()
-                    }
+                    // Prohibited Rule broken during current day: turns off fire and zeros streak for today.
+                    // (Perca de ofensiva +1 ONLY increments when 23:59 passes into new day!)
                     val updated = ofensiva.copy(
                         streakCount = 0,
                         isAlive = false,
@@ -514,9 +506,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 val ofensiva = dao.getOfensivaById(ofensivaId) ?: return@launch
-                if (ofensiva.streakCount > 0 && ofensiva.isAlive) {
-                    incrementLostCount()
-                }
                 dao.insertOrUpdateOfensiva(
                     ofensiva.copy(
                         streakCount = 0,
