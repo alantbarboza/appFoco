@@ -9,10 +9,7 @@ data class AppSettingsEntity(
     val id: Long = 1L,
     val selectedWidgetOfensivaId: Long = 1L,
     val hasInitialSeedBeenDone: Boolean = false,
-    val habitReminderTime: String? = "20:00",
-    val taskReminderTime: String? = "20:00",
     val simulatedDate: String? = null,
     val isDevModeActive: Boolean = false,
-    val isReminderEnabled: Boolean = true,
     val totalLostOfensivasCount: Int = 0
 )

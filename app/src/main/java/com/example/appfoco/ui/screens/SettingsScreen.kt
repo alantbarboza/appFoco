@@ -17,8 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.appfoco.ui.viewmodel.OfensivasViewModel
 import com.example.appfoco.utils.BackupManager
-import com.example.appfoco.utils.NotificationHelper
-import com.example.appfoco.utils.ReminderWorker
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,19 +34,14 @@ fun SettingsScreen(
     val extinguishedCount by viewModel.extinguishedCount.collectAsState()
 
     var isDevModeEnabled by remember(settings) { mutableStateOf(settings?.isDevModeActive == true) }
-    var isReminderEnabled by remember(settings) { mutableStateOf(settings?.isReminderEnabled ?: true) }
     var selectedDevOfensivaId by remember { mutableStateOf<Long?>(null) }
     var manualStreakInput by remember { mutableStateOf("") }
     var manualDaysToAdvanceInput by remember { mutableStateOf("1") }
 
-    var showTimeDialog by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showViewJsonDialog by remember { mutableStateOf(false) }
     var currentJsonData by remember { mutableStateOf("") }
-
-    var reminderHour by remember { mutableStateOf(20) }
-    var reminderMinute by remember { mutableStateOf(0) }
 
     val activeDevOfensiva = ofensivas.find { it.id == selectedDevOfensivaId } ?: ofensivas.firstOrNull()
 
@@ -66,6 +59,7 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Seção 1: Histórico
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Histórico", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -84,73 +78,7 @@ fun SettingsScreen(
                 }
             }
 
-            item {
-                Text("Notificações", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Lembrete Diário", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = bodyTextColor)
-                            Switch(
-                                checked = isReminderEnabled,
-                                onCheckedChange = { enabled ->
-                                    isReminderEnabled = enabled
-                                    if (enabled) {
-                                        ReminderWorker.scheduleDailyReminder(context, reminderHour, reminderMinute)
-                                    } else {
-                                        ReminderWorker.cancelReminder(context)
-                                    }
-                                }
-                            )
-                        }
-
-                        if (isReminderEnabled) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = String.format("Horário: %02d:%02d", reminderHour, reminderMinute),
-                                    fontSize = bodyFontSize,
-                                    fontWeight = bodyFontWeight,
-                                    color = bodyTextColor
-                                )
-                                TextButton(onClick = { showTimeDialog = true }) {
-                                    Text("Alterar", fontSize = bodyFontSize)
-                                }
-                            }
-
-                            HorizontalDivider()
-
-                            Button(
-                                onClick = {
-                                    NotificationHelper.sendNotification(
-                                        context,
-                                        "🔥 Ofensiva",
-                                        "Faça os seus hábitos e tarefas configurados até às 23:59 de hoje para salvar a sua ofensiva."
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Testar Notificação")
-                            }
-                        }
-                    }
-                }
-            }
-
+            // Seção 2: Dados
             item {
                 Text("Dados", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -221,6 +149,7 @@ fun SettingsScreen(
                 }
             }
 
+            // Seção 3: Desenvolvedor
             item {
                 Text("Desenvolvedor", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -335,52 +264,7 @@ fun SettingsScreen(
         }
     }
 
-    if (showTimeDialog) {
-        var hourText by remember { mutableStateOf(reminderHour.toString()) }
-        var minText by remember { mutableStateOf(reminderMinute.toString()) }
-
-        AlertDialog(
-            onDismissRequest = { showTimeDialog = false },
-            title = { Text("Configurar Horário do Lembrete") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Defina o horário para receber lembretes das tarefas e hábitos pendentes:")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = hourText,
-                            onValueChange = { hourText = it },
-                            placeholder = null,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = minText,
-                            onValueChange = { minText = it },
-                            placeholder = null,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    val h = hourText.toIntOrNull()?.coerceIn(0, 23) ?: 20
-                    val m = minText.toIntOrNull()?.coerceIn(0, 59) ?: 0
-                    reminderHour = h
-                    reminderMinute = m
-                    if (isReminderEnabled) {
-                        ReminderWorker.scheduleDailyReminder(context, h, m)
-                    }
-                    showTimeDialog = false
-                }) {
-                    Text("Salvar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimeDialog = false }) { Text("Cancelar") }
-            }
-        )
-    }
-
+    // Import JSON Dialog
     if (showImportDialog) {
         var jsonInput by remember { mutableStateOf("") }
 
@@ -440,6 +324,7 @@ fun SettingsScreen(
         )
     }
 
+    // View Current JSON Dialog
     if (showViewJsonDialog) {
         AlertDialog(
             onDismissRequest = { showViewJsonDialog = false },
@@ -472,6 +357,7 @@ fun SettingsScreen(
         )
     }
 
+    // Reset Confirmation Dialog
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },

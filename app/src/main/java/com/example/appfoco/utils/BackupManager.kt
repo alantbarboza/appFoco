@@ -82,7 +82,7 @@ object BackupManager {
                 settings = dao.getSettings()
             )
             gson.toJson(backupData)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "{}"
         }
     }
