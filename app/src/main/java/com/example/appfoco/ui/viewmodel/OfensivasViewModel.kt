@@ -151,6 +151,14 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    private suspend fun incrementLostCount() {
+        try {
+            val settings = dao.getSettings() ?: AppSettingsEntity()
+            dao.insertOrUpdateSettings(settings.copy(totalLostOfensivasCount = settings.totalLostOfensivasCount + 1))
+        } catch (_: Exception) {
+        }
+    }
+
     fun setDevModeActive(isActive: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -412,10 +420,9 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 val ruleLogs = dao.getRuleLogsForDate(date)
 
                 val anyRuleBroken = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
+                val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
 
                 if (anyRuleBroken) {
-                    // Prohibited Rule broken during current day: turns off fire and zeros streak for today.
-                    // (Perca de ofensiva +1 ONLY increments when 23:59 passes into new day!)
                     val updated = ofensiva.copy(
                         streakCount = 0,
                         isAlive = false,
@@ -423,34 +430,48 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                     dao.insertOrUpdateOfensiva(updated)
                 } else {
-                    val hasItems = habits.isNotEmpty() || tasks.isNotEmpty() || rules.isNotEmpty()
-                    val allHabitsDone = habits.isEmpty() || habits.all { h -> logs.any { it.habitId == h.id && it.isCompleted } }
-                    val allTasksDone = tasks.isEmpty() || tasks.all { it.isCompleted }
-                    val allDone = hasItems && allHabitsDone && allTasksDone
-
-                    if (allDone) {
-                        if (ofensiva.lastProgressDate != date) {
-                            val newStreak = ofensiva.streakCount + 1
+                    if (isProhibitedOnly) {
+                        val currentStreak = if (ofensiva.streakCount == 0) 1 else ofensiva.streakCount
+                        if (ofensiva.lastProgressDate != date || !ofensiva.isAlive || ofensiva.streakCount == 0) {
                             val updated = ofensiva.copy(
-                                streakCount = newStreak,
+                                streakCount = currentStreak,
+                                highestStreak = maxOf(ofensiva.highestStreak, currentStreak),
                                 lastProgressDate = date,
                                 lastActiveDate = date,
-                                highestStreak = maxOf(ofensiva.highestStreak, newStreak),
                                 isAlive = true
                             )
                             dao.insertOrUpdateOfensiva(updated)
                         }
                     } else {
-                        if (ofensiva.lastProgressDate == date) {
-                            val revokedStreak = maxOf(0, ofensiva.streakCount - 1)
-                            val updated = ofensiva.copy(
-                                streakCount = revokedStreak,
-                                lastProgressDate = null,
-                                isAlive = false
-                            )
-                            dao.insertOrUpdateOfensiva(updated)
+                        val hasItems = habits.isNotEmpty() || tasks.isNotEmpty() || rules.isNotEmpty()
+                        val allHabitsDone = habits.isEmpty() || habits.all { h -> logs.any { it.habitId == h.id && it.isCompleted } }
+                        val allTasksDone = tasks.isEmpty() || tasks.all { it.isCompleted }
+                        val allDone = hasItems && allHabitsDone && allTasksDone
+
+                        if (allDone) {
+                            if (ofensiva.lastProgressDate != date) {
+                                val newStreak = ofensiva.streakCount + 1
+                                val updated = ofensiva.copy(
+                                    streakCount = newStreak,
+                                    lastProgressDate = date,
+                                    lastActiveDate = date,
+                                    highestStreak = maxOf(ofensiva.highestStreak, newStreak),
+                                    isAlive = true
+                                )
+                                dao.insertOrUpdateOfensiva(updated)
+                            }
                         } else {
-                            dao.insertOrUpdateOfensiva(ofensiva.copy(isAlive = false, lastActiveDate = date))
+                            if (ofensiva.lastProgressDate == date) {
+                                val revokedStreak = maxOf(0, ofensiva.streakCount - 1)
+                                val updated = ofensiva.copy(
+                                    streakCount = revokedStreak,
+                                    lastProgressDate = null,
+                                    isAlive = false
+                                )
+                                dao.insertOrUpdateOfensiva(updated)
+                            } else {
+                                dao.insertOrUpdateOfensiva(ofensiva.copy(isAlive = false, lastActiveDate = date))
+                            }
                         }
                     }
                 }

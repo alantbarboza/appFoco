@@ -111,13 +111,19 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
 
                 if (isProhibitedOnly) {
                     val ruleLogs = dao.getRuleLogsForDate(currentDate)
-                    val ruleBroken = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
-                    if (ruleBroken) {
+                    val ruleBrokenOnYesterday = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
+                    if (ruleBrokenOnYesterday) {
                         if (of.streakCount > 0) {
                             lostCountIncrement++
                         }
                         dao.insertOrUpdateOfensiva(
-                            of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
+                            of.copy(
+                                streakCount = 1,
+                                highestStreak = maxOf(of.highestStreak, 1),
+                                isAlive = true,
+                                lastProgressDate = newDate,
+                                lastActiveDate = newDate
+                            )
                         )
                     } else {
                         val newStreak = of.streakCount + 1
