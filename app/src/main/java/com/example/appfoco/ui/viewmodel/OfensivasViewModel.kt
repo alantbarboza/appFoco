@@ -111,9 +111,16 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 launch {
-                    dao.getAllOfensivasFlow().collect {
-                        _ofensivas.value = it
+                    dao.getAllOfensivasFlow().collect { list ->
+                        _ofensivas.value = list
                         _isLoading.value = false
+                    }
+                }
+                launch {
+                    currentDate.collect {
+                        dao.getAllOfensivas().forEach { of ->
+                            evaluateOfensivaProgress(of.id)
+                        }
                     }
                 }
                 launch {
@@ -432,16 +439,14 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     if (isProhibitedOnly) {
                         val currentStreak = if (ofensiva.streakCount == 0) 1 else ofensiva.streakCount
-                        if (ofensiva.lastProgressDate != date || !ofensiva.isAlive || ofensiva.streakCount == 0) {
-                            val updated = ofensiva.copy(
-                                streakCount = currentStreak,
-                                highestStreak = maxOf(ofensiva.highestStreak, currentStreak),
-                                lastProgressDate = date,
-                                lastActiveDate = date,
-                                isAlive = true
-                            )
-                            dao.insertOrUpdateOfensiva(updated)
-                        }
+                        val updated = ofensiva.copy(
+                            streakCount = currentStreak,
+                            highestStreak = maxOf(ofensiva.highestStreak, currentStreak),
+                            lastProgressDate = date,
+                            lastActiveDate = date,
+                            isAlive = true
+                        )
+                        dao.insertOrUpdateOfensiva(updated)
                     } else {
                         val hasItems = habits.isNotEmpty() || tasks.isNotEmpty() || rules.isNotEmpty()
                         val allHabitsDone = habits.isEmpty() || habits.all { h -> logs.any { it.habitId == h.id && it.isCompleted } }

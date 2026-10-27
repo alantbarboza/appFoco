@@ -29,7 +29,6 @@ fun OfensivasScreen(
 ) {
     val context = LocalContext.current
     val ofensivas by viewModel.ofensivas.collectAsState()
-    val currentDate by viewModel.currentDate.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var ofensivaToDelete by remember { mutableStateOf<OfensivaEntity?>(null) }
@@ -58,8 +57,7 @@ fun OfensivasScreen(
                 }
             } else {
                 items(ofensivas) { ofensiva ->
-                    val isDoneToday = ofensiva.isAlive && ofensiva.lastProgressDate == currentDate
-                    val fireIcon = if (isDoneToday) "🔥 " else ""
+                    val fireIcon = if (ofensiva.isAlive) "🔥 " else ""
                     val dayLabel = if (ofensiva.streakCount <= 1) "dia" else "dias"
 
                     Card(

@@ -14,9 +14,6 @@ import com.example.appfoco.ui.WidgetSplashActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class FocoAppWidgetProvider : AppWidgetProvider() {
 
@@ -79,9 +76,6 @@ class FocoAppWidgetProvider : AppWidgetProvider() {
 
         suspend fun updateWidgetForId(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             val dao = AppDatabase.getDatabase(context).appDao()
-            val settings = dao.getSettings()
-            val currentDate = settings?.simulatedDate ?: SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-
             val ofensivas = dao.getAllOfensivas()
             val savedOfensivaId = WidgetConfigureActivity.getWidgetSelection(context, appWidgetId)
             val selectedOfensiva = ofensivas.find { it.id == savedOfensivaId } ?: ofensivas.firstOrNull()
@@ -95,7 +89,7 @@ class FocoAppWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_streak_label, "sem ofensivas\nconfiguradas")
                 views.setTextColor(R.id.widget_streak_label, Color.parseColor("#B0B0B0"))
             } else {
-                val isDoneToday = selectedOfensiva.isAlive && selectedOfensiva.lastProgressDate == currentDate
+                val isDoneToday = selectedOfensiva.isAlive
                 val fireEmoji = if (isDoneToday) "🔥" else ""
                 val streakCount = selectedOfensiva.streakCount
                 val labelText = selectedOfensiva.name
