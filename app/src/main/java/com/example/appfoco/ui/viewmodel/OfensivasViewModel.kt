@@ -158,14 +158,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private suspend fun incrementLostCount() {
-        try {
-            val settings = dao.getSettings() ?: AppSettingsEntity()
-            dao.insertOrUpdateSettings(settings.copy(totalLostOfensivasCount = settings.totalLostOfensivasCount + 1))
-        } catch (_: Exception) {
-        }
-    }
-
     fun setDevModeActive(isActive: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {

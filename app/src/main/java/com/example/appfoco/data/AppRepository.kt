@@ -140,38 +140,19 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
                 } else {
                     val lastActiveRaw = of.lastActiveDate ?: currentDate
                     val lastActive = formatToBrazilianDate(lastActiveRaw)
-                    val lastActiveDateObj = try {
-                        SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(lastActive)
-                    } catch (_: Exception) {
-                        Date()
-                    } ?: Date()
+                    val completedYesterday = of.lastProgressDate == lastActive
 
-                    val diffInMillis = cal.time.time - lastActiveDateObj.time
-                    val daysBetween = diffInMillis / (1000 * 60 * 60 * 24)
-
-                    if (daysBetween > 1) {
+                    if (!completedYesterday) {
                         if (of.streakCount > 0) {
                             lostCountIncrement++
                         }
                         dao.insertOrUpdateOfensiva(
                             of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
                         )
-                    } else if (daysBetween >= 1L) {
-                        val completedYesterday = of.lastProgressDate == lastActive
-                        if (completedYesterday) {
-                            dao.insertOrUpdateOfensiva(
-                                of.copy(isAlive = false, lastActiveDate = newDate)
-                            )
-                        } else {
-                            if (of.streakCount > 0) {
-                                lostCountIncrement++
-                            }
-                            dao.insertOrUpdateOfensiva(
-                                of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
-                            )
-                        }
                     } else {
-                        dao.insertOrUpdateOfensiva(of.copy(lastActiveDate = newDate))
+                        dao.insertOrUpdateOfensiva(
+                            of.copy(isAlive = false, lastActiveDate = newDate)
+                        )
                     }
                 }
             }
