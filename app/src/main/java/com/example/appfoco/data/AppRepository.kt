@@ -96,9 +96,6 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
             cal.add(Calendar.DAY_OF_MONTH, days)
             val newDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(cal.time)
 
-            val settings = dao.getSettings() ?: AppSettingsEntity()
-            dao.insertOrUpdateSettings(settings.copy(simulatedDate = newDate))
-
             val allOfensivas = dao.getAllOfensivas()
             var lostCountIncrement = 0
 
@@ -138,29 +135,39 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
                         )
                     }
                 } else {
-                    val lastActiveRaw = of.lastActiveDate ?: currentDate
-                    val lastActive = formatToBrazilianDate(lastActiveRaw)
-                    val completedYesterday = of.lastProgressDate == lastActive
+                    val completedYesterday = of.lastProgressDate == currentDate
 
                     if (!completedYesterday) {
                         if (of.streakCount > 0) {
                             lostCountIncrement++
                         }
                         dao.insertOrUpdateOfensiva(
-                            of.copy(streakCount = 0, isAlive = false, lastProgressDate = null, lastActiveDate = newDate)
+                            of.copy(
+                                streakCount = 0,
+                                isAlive = false,
+                                lastProgressDate = null,
+                                lastActiveDate = newDate
+                            )
                         )
                     } else {
                         dao.insertOrUpdateOfensiva(
-                            of.copy(isAlive = false, lastActiveDate = newDate)
+                            of.copy(
+                                isAlive = false,
+                                lastActiveDate = newDate
+                            )
                         )
                     }
                 }
             }
 
-            if (lostCountIncrement > 0) {
-                val currentSettings = dao.getSettings() ?: AppSettingsEntity()
-                dao.insertOrUpdateSettings(currentSettings.copy(totalLostOfensivasCount = currentSettings.totalLostOfensivasCount + lostCountIncrement))
-            }
+            val settings = dao.getSettings() ?: AppSettingsEntity()
+            val newLostCount = settings.totalLostOfensivasCount + lostCountIncrement
+            dao.insertOrUpdateSettings(
+                settings.copy(
+                    simulatedDate = newDate,
+                    totalLostOfensivasCount = newLostCount
+                )
+            )
 
             notifyWidgetUpdate()
         } catch (_: Exception) {
