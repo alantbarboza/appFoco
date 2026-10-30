@@ -20,6 +20,7 @@ import com.example.appfoco.widget.FocoAppWidgetProvider
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -103,10 +105,28 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                     dao.insertOrUpdateSettings(AppSettingsEntity(id = 1L))
                 }
 
+                performMidnightCheck()
+
                 launch {
                     try {
                         refreshHistoryData()
                     } catch (_: Exception) {
+                    }
+                }
+
+                launch {
+                    while (isActive) {
+                        val now = Calendar.getInstance()
+                        val nextMidnight = Calendar.getInstance().apply {
+                            add(Calendar.DAY_OF_MONTH, 1)
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                        val millisUntilMidnight = maxOf(1000L, nextMidnight.timeInMillis - now.timeInMillis)
+                        delay(millisUntilMidnight)
+                        performMidnightCheck()
                     }
                 }
 
@@ -155,6 +175,75 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (_: Exception) {
                 _isLoading.value = false
             }
+        }
+    }
+
+    fun performMidnightCheck() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val currentSettings = dao.getSettings() ?: return@launch
+                if (currentSettings.isDevModeActive) return@launch
+
+                val realToday = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+                val allOfensivas = dao.getAllOfensivas()
+                var lostCountIncrement = 0
+
+                for (of in allOfensivas) {
+                    val habits = dao.getHabitsForOfensiva(of.id)
+                    val tasks = dao.getTasksForOfensivaAndDate(of.id, of.lastActiveDate ?: realToday)
+                    val rules = dao.getRulesForOfensiva(of.id)
+
+                    val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
+
+                    if (!isProhibitedOnly) {
+                        val lastActive = formatToBrazilianDate(of.lastActiveDate)
+                        if (lastActive != realToday) {
+                            val completedYesterday = of.lastProgressDate == lastActive
+                            if (!completedYesterday) {
+                                if (of.streakCount > 0) {
+                                    lostCountIncrement++
+                                }
+                                dao.insertOrUpdateOfensiva(
+                                    of.copy(
+                                        streakCount = 0,
+                                        isAlive = false,
+                                        lastProgressDate = null,
+                                        lastActiveDate = realToday
+                                    )
+                                )
+                            } else {
+                                dao.insertOrUpdateOfensiva(
+                                    of.copy(
+                                        isAlive = false,
+                                        lastActiveDate = realToday
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (lostCountIncrement > 0) {
+                    val settingsNow = dao.getSettings() ?: AppSettingsEntity()
+                    dao.insertOrUpdateSettings(
+                        settingsNow.copy(
+                            totalLostOfensivasCount = settingsNow.totalLostOfensivasCount + lostCountIncrement
+                        )
+                    )
+                }
+
+                FocoAppWidgetProvider.triggerUpdate(getApplication())
+                refreshHistoryData()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private suspend fun incrementLostCount() {
+        try {
+            val settings = dao.getSettings() ?: AppSettingsEntity()
+            dao.insertOrUpdateSettings(settings.copy(totalLostOfensivasCount = settings.totalLostOfensivasCount + 1))
+        } catch (_: Exception) {
         }
     }
 

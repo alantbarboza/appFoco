@@ -1,5 +1,9 @@
 package com.example.appfoco.ui
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -26,8 +30,21 @@ class MainActivity : ComponentActivity() {
 
     private val ofensivasViewModel: OfensivasViewModel by viewModels()
 
+    private val midnightReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            ofensivasViewModel.performMidnightCheck()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        registerReceiver(midnightReceiver, filter)
 
         setContent {
             AppFocoTheme {
@@ -97,6 +114,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ofensivasViewModel.performMidnightCheck()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(midnightReceiver)
+        } catch (_: Exception) {
         }
     }
 }
