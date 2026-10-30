@@ -30,7 +30,7 @@ import com.example.appfoco.data.entity.TaskEntity
         MilestoneEntity::class,
         AppSettingsEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,7 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
-                            db.execSQL("INSERT OR REPLACE INTO app_settings (id, selectedWidgetOfensivaId, hasInitialSeedBeenDone, isDevModeActive, totalLostOfensivasCount) VALUES (1, 1, 0, 0, 0)")
+                            db.execSQL("INSERT OR REPLACE INTO app_settings (id, selectedWidgetOfensivaId, hasInitialSeedBeenDone, totalLostOfensivasCount) VALUES (1, 1, 0, 0)")
                         }
                     })
                     .build()

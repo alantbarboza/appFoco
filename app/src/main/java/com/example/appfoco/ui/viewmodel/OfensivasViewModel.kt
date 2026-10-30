@@ -17,7 +17,6 @@ import com.example.appfoco.data.formatToBrazilianDate
 import com.example.appfoco.utils.BackupData
 import com.example.appfoco.utils.BackupManager
 import com.example.appfoco.widget.FocoAppWidgetProvider
-import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -40,8 +39,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
     private val dao = AppDatabase.getDatabase(application).appDao()
     private val repository = AppRepository(dao, application)
 
-    private val prefs = application.getSharedPreferences("app_foco_dev_prefs", Context.MODE_PRIVATE)
-
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
@@ -51,16 +48,8 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
     val settings: StateFlow<AppSettingsEntity?> = repository.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val currentDate: StateFlow<String> = repository.settingsFlow
-        .map { settings ->
-            val rawDate = if (settings?.isDevModeActive == true && !settings.simulatedDate.isNullOrBlank()) {
-                settings.simulatedDate
-            } else {
-                SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-            }
-            formatToBrazilianDate(rawDate)
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, formatToBrazilianDate(null))
+    private val _currentDate = MutableStateFlow(SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()))
+    val currentDate: StateFlow<String> = _currentDate
 
     val maxHighestStreak: StateFlow<Int> = ofensivas
         .map { list -> list.maxOfOrNull { it.highestStreak } ?: 0 }
@@ -181,10 +170,9 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
     fun performMidnightCheck() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val currentSettings = dao.getSettings() ?: return@launch
-                if (currentSettings.isDevModeActive) return@launch
-
                 val realToday = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+                _currentDate.value = realToday
+
                 val allOfensivas = dao.getAllOfensivas()
                 var lostCountIncrement = 0
 
@@ -247,39 +235,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun setDevModeActive(isActive: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val settings = dao.getSettings() ?: AppSettingsEntity()
-                if (isActive) {
-                    val backupData = BackupData(
-                        ofensivas = dao.getAllOfensivas(),
-                        habits = dao.getAllHabits().filter { !it.name.contains("estudar 30", ignoreCase = true) },
-                        habitLogs = dao.getAllHabitLogs(),
-                        tasks = dao.getAllTasks().filter { !it.name.contains("estudar 30", ignoreCase = true) },
-                        rules = dao.getAllRules(),
-                        ruleLogs = dao.getAllRuleLogs(),
-                        settings = settings.copy(isDevModeActive = false)
-                    )
-                    val json = Gson().toJson(backupData)
-                    prefs.edit().putString("real_data_snapshot", json).apply()
-                    dao.insertOrUpdateSettings(settings.copy(isDevModeActive = true))
-                } else {
-                    val savedJson = prefs.getString("real_data_snapshot", null)
-                    if (!savedJson.isNullOrBlank()) {
-                        BackupManager.importBackupFromJsonString(getApplication(), savedJson)
-                        prefs.edit().remove("real_data_snapshot").apply()
-                    }
-                    val currentSettings = dao.getSettings() ?: AppSettingsEntity()
-                    dao.insertOrUpdateSettings(currentSettings.copy(isDevModeActive = false, simulatedDate = null))
-                }
-                FocoAppWidgetProvider.triggerUpdate(getApplication())
-                refreshHistoryData()
-            } catch (_: Exception) {
-            }
-        }
-    }
-
     fun refreshHistoryData() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -294,17 +249,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setEditingOfensivaId(id: Long?) {
         _editingOfensivaId.value = id
-    }
-
-    fun advanceDays(days: Int) {
-        viewModelScope.launch {
-            try {
-                repository.devAdvanceDays(days)
-                dao.getAllOfensivas().forEach { evaluateOfensivaProgress(it.id) }
-                refreshHistoryData()
-            } catch (_: Exception) {
-            }
-        }
     }
 
     fun createOfensiva(name: String, initialItemName: String, type: String) {
@@ -568,27 +512,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun setOfensivaStreak(ofensivaId: Long, streak: Int) {
-        viewModelScope.launch {
-            try {
-                val ofensiva = dao.getOfensivaById(ofensivaId) ?: return@launch
-                val date = repository.getCurrentDate()
-                val clamped = maxOf(0, streak)
-                val updated = ofensiva.copy(
-                    streakCount = clamped,
-                    highestStreak = maxOf(ofensiva.highestStreak, clamped),
-                    isAlive = true,
-                    lastActiveDate = date,
-                    lastProgressDate = if (clamped > 0) date else null
-                )
-                dao.insertOrUpdateOfensiva(updated)
-                FocoAppWidgetProvider.triggerUpdate(getApplication())
-                refreshHistoryData()
-            } catch (_: Exception) {
-            }
-        }
-    }
-
     fun reigniteOfensiva(ofensivaId: Long) {
         viewModelScope.launch {
             try {
@@ -632,7 +555,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 repository.resetAllData()
                 dao.clearRuleLogs()
-                prefs.edit().remove("real_data_snapshot").apply()
                 refreshHistoryData()
             } catch (_: Exception) {
             }

@@ -13,7 +13,6 @@ import com.example.appfoco.data.entity.TaskEntity
 import com.example.appfoco.widget.FocoAppWidgetProvider
 import kotlinx.coroutines.flow.Flow
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -49,9 +48,7 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
     }
 
     suspend fun getCurrentDate(): String {
-        val settings = dao.getSettings()
-        val rawDate = settings?.simulatedDate ?: SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-        return formatToBrazilianDate(rawDate)
+        return SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
     }
 
     suspend fun getOrCreatePet(): PetEntity {
@@ -74,110 +71,6 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
             notifyWidgetUpdate()
         }
         return dao.getPet() ?: pet
-    }
-
-    suspend fun devAdvanceDays(days: Int) {
-        try {
-            val rawCurrentDate = getCurrentDate()
-            val currentDate = formatToBrazilianDate(rawCurrentDate)
-
-            val date = try {
-                SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(currentDate)
-            } catch (_: Exception) {
-                try {
-                    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(currentDate)
-                } catch (_: Exception) {
-                    Date()
-                }
-            } ?: Date()
-
-            val cal = Calendar.getInstance()
-            cal.time = date
-            cal.add(Calendar.DAY_OF_MONTH, days)
-            val newDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(cal.time)
-
-            val allOfensivas = dao.getAllOfensivas()
-            var lostCountIncrement = 0
-
-            for (of in allOfensivas) {
-                val habits = dao.getHabitsForOfensiva(of.id)
-                val tasks = dao.getTasksForOfensivaAndDate(of.id, currentDate)
-                val rules = dao.getRulesForOfensiva(of.id)
-
-                val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
-
-                if (isProhibitedOnly) {
-                    val ruleLogs = dao.getRuleLogsForDate(currentDate)
-                    val ruleBrokenOnYesterday = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
-                    if (ruleBrokenOnYesterday) {
-                        if (of.streakCount > 0) {
-                            lostCountIncrement++
-                        }
-                        dao.insertOrUpdateOfensiva(
-                            of.copy(
-                                streakCount = 1,
-                                highestStreak = maxOf(of.highestStreak, 1),
-                                isAlive = true,
-                                lastProgressDate = newDate,
-                                lastActiveDate = newDate
-                            )
-                        )
-                    } else {
-                        val newStreak = of.streakCount + 1
-                        dao.insertOrUpdateOfensiva(
-                            of.copy(
-                                streakCount = newStreak,
-                                highestStreak = maxOf(of.highestStreak, newStreak),
-                                isAlive = true,
-                                lastProgressDate = newDate,
-                                lastActiveDate = newDate
-                            )
-                        )
-                    }
-                } else {
-                    val completedYesterday = of.lastProgressDate == currentDate
-
-                    if (!completedYesterday) {
-                        if (of.streakCount > 0) {
-                            lostCountIncrement++
-                        }
-                        dao.insertOrUpdateOfensiva(
-                            of.copy(
-                                streakCount = 0,
-                                isAlive = false,
-                                lastProgressDate = null,
-                                lastActiveDate = newDate
-                            )
-                        )
-                    } else {
-                        dao.insertOrUpdateOfensiva(
-                            of.copy(
-                                isAlive = false,
-                                lastActiveDate = newDate
-                            )
-                        )
-                    }
-                }
-            }
-
-            val settings = dao.getSettings() ?: AppSettingsEntity()
-            val newLostCount = settings.totalLostOfensivasCount + lostCountIncrement
-            dao.insertOrUpdateSettings(
-                settings.copy(
-                    simulatedDate = newDate,
-                    totalLostOfensivasCount = newLostCount
-                )
-            )
-
-            notifyWidgetUpdate()
-        } catch (_: Exception) {
-        }
-    }
-
-    suspend fun devSetSimulatedDate(dateStr: String?) {
-        val settings = dao.getSettings() ?: AppSettingsEntity()
-        dao.insertOrUpdateSettings(settings.copy(simulatedDate = formatToBrazilianDate(dateStr)))
-        notifyWidgetUpdate()
     }
 
     fun getHabitLogsForDateFlow(date: String): Flow<List<HabitLogEntity>> = dao.getHabitLogsForDateFlow(date)
@@ -214,7 +107,7 @@ class AppRepository(private val dao: AppDao, private val context: Context? = nul
         dao.clearDeathRecords()
         dao.clearMilestones()
         dao.clearOfensivas()
-        dao.insertOrUpdateSettings(AppSettingsEntity(id = 1L, simulatedDate = null, hasInitialSeedBeenDone = false, totalLostOfensivasCount = 0))
+        dao.insertOrUpdateSettings(AppSettingsEntity(id = 1L, hasInitialSeedBeenDone = false, totalLostOfensivasCount = 0))
         notifyWidgetUpdate()
     }
 }

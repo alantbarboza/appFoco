@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -27,23 +26,14 @@ fun SettingsScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
-    val ofensivas by viewModel.ofensivas.collectAsState()
-    val settings by viewModel.settings.collectAsState()
     val currentDate by viewModel.currentDate.collectAsState()
     val maxHighestStreak by viewModel.maxHighestStreak.collectAsState()
     val extinguishedCount by viewModel.extinguishedCount.collectAsState()
-
-    var isDevModeEnabled by remember(settings) { mutableStateOf(settings?.isDevModeActive == true) }
-    var selectedDevOfensivaId by remember { mutableStateOf<Long?>(null) }
-    var manualStreakInput by remember { mutableStateOf("") }
-    var manualDaysToAdvanceInput by remember { mutableStateOf("1") }
 
     var showResetDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showViewJsonDialog by remember { mutableStateOf(false) }
     var currentJsonData by remember { mutableStateOf("") }
-
-    val activeDevOfensiva = ofensivas.find { it.id == selectedDevOfensivaId } ?: ofensivas.firstOrNull()
 
     val highestStreakLabel = if (maxHighestStreak <= 1) "dia" else "dias"
 
@@ -144,119 +134,6 @@ fun SettingsScreen(
                                 .padding(vertical = 10.dp)
                         ) {
                             Text("Resetar Aplicativo", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-
-            // Seção 3: Desenvolvedor
-            item {
-                Text("Desenvolvedor", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Modo Desenvolvedor", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = bodyTextColor)
-                            Switch(
-                                checked = isDevModeEnabled,
-                                onCheckedChange = {
-                                    isDevModeEnabled = it
-                                    viewModel.setDevModeActive(it)
-                                }
-                            )
-                        }
-
-                        if (isDevModeEnabled) {
-                            HorizontalDivider()
-
-                            if (ofensivas.isEmpty()) {
-                                Text("Nenhuma ofensiva disponível.", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = MaterialTheme.colorScheme.error)
-                            } else {
-                                Text("Selecione a ofensiva:", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = bodyTextColor)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    ofensivas.forEach { of ->
-                                        FilterChip(
-                                            selected = activeDevOfensiva?.id == of.id,
-                                            onClick = { selectedDevOfensivaId = of.id },
-                                            label = { Text(of.name) },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                                selectedLabelColor = Color.White
-                                            )
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                Text("Simulação de tempo:", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = bodyTextColor)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedTextField(
-                                        value = manualDaysToAdvanceInput,
-                                        onValueChange = { manualDaysToAdvanceInput = it },
-                                        placeholder = null,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Button(
-                                        onClick = {
-                                            val days = manualDaysToAdvanceInput.toIntOrNull()
-                                            if (days != null && days > 0) {
-                                                viewModel.advanceDays(days)
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Avançar")
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                if (activeDevOfensiva != null) {
-                                    Text("Simulação de ofensiva:", fontSize = bodyFontSize, fontWeight = bodyFontWeight, color = bodyTextColor)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        OutlinedTextField(
-                                            value = manualStreakInput,
-                                            onValueChange = { manualStreakInput = it },
-                                            placeholder = null,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Button(
-                                            onClick = {
-                                                val days = manualStreakInput.toIntOrNull()
-                                                if (days != null) {
-                                                    viewModel.setOfensivaStreak(activeDevOfensiva.id, days)
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text("Aplicar")
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }

@@ -9,7 +9,5 @@ data class AppSettingsEntity(
     val id: Long = 1L,
     val selectedWidgetOfensivaId: Long = 1L,
     val hasInitialSeedBeenDone: Boolean = false,
-    val simulatedDate: String? = null,
-    val isDevModeActive: Boolean = false,
     val totalLostOfensivasCount: Int = 0
 )
