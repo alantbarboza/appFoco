@@ -10,10 +10,14 @@ import android.graphics.Color
 import android.widget.RemoteViews
 import com.example.appfoco.R
 import com.example.appfoco.data.AppDatabase
+import com.example.appfoco.data.formatToBrazilianDate
 import com.example.appfoco.ui.WidgetSplashActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class FocoAppWidgetProvider : AppWidgetProvider() {
 
@@ -39,12 +43,16 @@ class FocoAppWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_UPDATE_WIDGET) {
+        if (intent.action == ACTION_UPDATE_WIDGET || intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(
                 ComponentName(context, FocoAppWidgetProvider::class.java)
             )
-            onUpdate(context, appWidgetManager, appWidgetIds)
+            CoroutineScope(Dispatchers.IO).launch {
+                for (appWidgetId in appWidgetIds) {
+                    updateWidgetForId(context, appWidgetManager, appWidgetId)
+                }
+            }
         }
     }
 
@@ -76,6 +84,8 @@ class FocoAppWidgetProvider : AppWidgetProvider() {
 
         suspend fun updateWidgetForId(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             val dao = AppDatabase.getDatabase(context).appDao()
+            val currentDate = formatToBrazilianDate(SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()))
+
             val ofensivas = dao.getAllOfensivas()
             val savedOfensivaId = WidgetConfigureActivity.getWidgetSelection(context, appWidgetId)
             val selectedOfensiva = ofensivas.find { it.id == savedOfensivaId } ?: ofensivas.firstOrNull()
@@ -89,14 +99,26 @@ class FocoAppWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_streak_label, "sem ofensivas\nconfiguradas")
                 views.setTextColor(R.id.widget_streak_label, Color.parseColor("#B0B0B0"))
             } else {
-                val isDoneToday = selectedOfensiva.isAlive
-                val fireEmoji = if (isDoneToday) "🔥" else ""
-                val streakCount = selectedOfensiva.streakCount
-                val labelText = selectedOfensiva.name
+                val freshOfensiva = dao.getOfensivaById(selectedOfensiva.id) ?: selectedOfensiva
+                val habits = dao.getHabitsForOfensiva(freshOfensiva.id)
+                val tasks = dao.getTasksForOfensivaAndDate(freshOfensiva.id, currentDate)
+                val rules = dao.getRulesForOfensiva(freshOfensiva.id)
 
-                val bgResource = if (isDoneToday) R.drawable.widget_bg_active else R.drawable.widget_bg_pending
-                val streakTextColor = if (isDoneToday) Color.parseColor("#FFEA00") else Color.parseColor("#FF3D00")
-                val labelTextColor = if (isDoneToday) Color.parseColor("#FFF3E0") else Color.parseColor("#B0B0B0")
+                val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
+
+                val isBurning = if (isProhibitedOnly) {
+                    freshOfensiva.isAlive
+                } else {
+                    freshOfensiva.isAlive && freshOfensiva.lastProgressDate == currentDate
+                }
+
+                val fireEmoji = if (isBurning) "🔥" else ""
+                val streakCount = freshOfensiva.streakCount
+                val labelText = freshOfensiva.name
+
+                val bgResource = if (isBurning) R.drawable.widget_bg_active else R.drawable.widget_bg_pending
+                val streakTextColor = if (isBurning) Color.parseColor("#FFEA00") else Color.parseColor("#FF3D00")
+                val labelTextColor = if (isBurning) Color.parseColor("#FFF3E0") else Color.parseColor("#B0B0B0")
 
                 views.setInt(R.id.widget_root, "setBackgroundResource", bgResource)
                 views.setTextViewText(R.id.widget_fire_icon, fireEmoji)
@@ -120,10 +142,25 @@ class FocoAppWidgetProvider : AppWidgetProvider() {
         }
 
         fun triggerUpdate(context: Context) {
-            val intent = Intent(context, FocoAppWidgetProvider::class.java).apply {
-                action = ACTION_UPDATE_WIDGET
+            try {
+                val appWidgetManager = AppWidgetManager.getInstance(context)
+                val componentName = ComponentName(context, FocoAppWidgetProvider::class.java)
+                val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+
+                if (appWidgetIds.isNotEmpty()) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        for (appWidgetId in appWidgetIds) {
+                            updateWidgetForId(context, appWidgetManager, appWidgetId)
+                        }
+                    }
+                }
+
+                val intent = Intent(context, FocoAppWidgetProvider::class.java).apply {
+                    action = ACTION_UPDATE_WIDGET
+                }
+                context.sendBroadcast(intent)
+            } catch (_: Exception) {
             }
-            context.sendBroadcast(intent)
         }
     }
 }
