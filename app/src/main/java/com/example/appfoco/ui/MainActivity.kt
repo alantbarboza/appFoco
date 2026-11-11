@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import com.example.appfoco.R
+import com.example.appfoco.receiver.MidnightAlarmReceiver
 import com.example.appfoco.ui.screens.EditOfensivaScreen
 import com.example.appfoco.ui.screens.OfensivasScreen
 import com.example.appfoco.ui.screens.SettingsScreen
@@ -38,6 +39,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        MidnightAlarmReceiver.scheduleMidnightAlarm(this)
 
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_DATE_CHANGED)

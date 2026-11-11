@@ -174,12 +174,68 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 _currentDate.value = realToday
 
                 val allOfensivas = dao.getAllOfensivas()
+                var lostCountIncrement = 0
+
                 for (of in allOfensivas) {
-                    evaluateOfensivaProgress(of.id)
+                    val habits = dao.getHabitsForOfensiva(of.id)
+                    val tasks = dao.getTasksForOfensivaAndDate(of.id, of.lastActiveDate ?: realToday)
+                    val rules = dao.getRulesForOfensiva(of.id)
+
+                    val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
+                    val lastActive = formatToBrazilianDate(of.lastActiveDate)
+
+                    if (lastActive != realToday) {
+                        if (isProhibitedOnly) {
+                            val ruleLogsYesterday = dao.getRuleLogsForDate(lastActive)
+                            val ruleBrokenYesterday = rules.any { r -> ruleLogsYesterday.any { it.ruleId == r.id && it.isBroken } }
+
+                            val nextStreak = if (ruleBrokenYesterday) 1 else maxOf(1, of.streakCount + 1)
+                            dao.insertOrUpdateOfensiva(
+                                of.copy(
+                                    streakCount = nextStreak,
+                                    highestStreak = maxOf(of.highestStreak, nextStreak),
+                                    isAlive = true,
+                                    lastProgressDate = realToday,
+                                    lastActiveDate = realToday
+                                )
+                            )
+                        } else {
+                            val completedYesterday = of.lastProgressDate == lastActive
+                            if (!completedYesterday) {
+                                if (of.streakCount > 0) {
+                                    lostCountIncrement++
+                                }
+                                dao.insertOrUpdateOfensiva(
+                                    of.copy(
+                                        streakCount = 0,
+                                        isAlive = false,
+                                        lastProgressDate = null,
+                                        lastActiveDate = realToday
+                                    )
+                                )
+                            } else {
+                                dao.insertOrUpdateOfensiva(
+                                    of.copy(
+                                        isAlive = false,
+                                        lastActiveDate = realToday
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
 
-                refreshHistoryData()
+                if (lostCountIncrement > 0) {
+                    val settingsNow = dao.getSettings() ?: AppSettingsEntity()
+                    dao.insertOrUpdateSettings(
+                        settingsNow.copy(
+                            totalLostOfensivasCount = settingsNow.totalLostOfensivasCount + lostCountIncrement
+                        )
+                    )
+                }
+
                 FocoAppWidgetProvider.triggerUpdate(getApplication())
+                refreshHistoryData()
             } catch (_: Exception) {
             }
         }
@@ -388,34 +444,6 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 val ofensiva = dao.getOfensivaById(ofensivaId) ?: return@launch
                 val date = currentDate.value
 
-                val lastActive = formatToBrazilianDate(ofensiva.lastActiveDate)
-                val isNewDay = lastActive != date
-
-                val allHabits = dao.getHabitsForOfensiva(ofensivaId)
-                val tasksForToday = dao.getTasksForOfensivaAndDate(ofensivaId, date)
-                val rules = dao.getRulesForOfensiva(ofensivaId)
-
-                val isProhibitedOnly = allHabits.isEmpty() && tasksForToday.isEmpty() && rules.isNotEmpty()
-
-                if (isNewDay && !isProhibitedOnly) {
-                    val completedYesterday = ofensiva.lastProgressDate == lastActive
-                    if (!completedYesterday) {
-                        if (ofensiva.streakCount > 0) {
-                            incrementLostCount()
-                        }
-                        val zeroedOfensiva = ofensiva.copy(
-                            streakCount = 0,
-                            isAlive = false,
-                            lastProgressDate = null,
-                            lastActiveDate = date
-                        )
-                        dao.insertOrUpdateOfensiva(zeroedOfensiva)
-                        FocoAppWidgetProvider.triggerUpdate(getApplication())
-                        refreshHistoryData()
-                        return@launch
-                    }
-                }
-
                 val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
                 val currentDateObj = try {
                     sdf.parse(date)
@@ -426,15 +454,19 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                 val cal = Calendar.getInstance().apply { time = currentDateObj }
                 val todayDayOfWeek = cal.get(Calendar.DAY_OF_WEEK).toString()
 
-                val habitsForToday = allHabits.filter { habit ->
+                val allHabits = dao.getHabitsForOfensiva(ofensivaId)
+                val habits = allHabits.filter { habit ->
                     val daysList = habit.daysOfWeek.split(",")
                     daysList.contains(todayDayOfWeek)
                 }
 
-                val habitLogsForToday = dao.getHabitLogsForDate(date)
-                val ruleLogsForToday = dao.getRuleLogsForDate(date)
+                val logs = dao.getHabitLogsForDate(date)
+                val tasks = dao.getTasksForOfensivaAndDate(ofensivaId, date)
+                val rules = dao.getRulesForOfensiva(ofensivaId)
+                val ruleLogs = dao.getRuleLogsForDate(date)
 
-                val anyRuleBroken = rules.any { r -> ruleLogsForToday.any { it.ruleId == r.id && it.isBroken } }
+                val anyRuleBroken = rules.any { r -> ruleLogs.any { it.ruleId == r.id && it.isBroken } }
+                val isProhibitedOnly = habits.isEmpty() && tasks.isEmpty() && rules.isNotEmpty()
 
                 if (anyRuleBroken) {
                     val updated = ofensiva.copy(
@@ -444,48 +476,51 @@ class OfensivasViewModel(application: Application) : AndroidViewModel(applicatio
                         lastActiveDate = date
                     )
                     dao.insertOrUpdateOfensiva(updated)
-                } else {
-                    if (isProhibitedOnly) {
-                        val currentStreak = if (ofensiva.streakCount == 0) 1 else ofensiva.streakCount
-                        val updated = ofensiva.copy(
-                            streakCount = currentStreak,
-                            highestStreak = maxOf(ofensiva.highestStreak, currentStreak),
-                            lastProgressDate = date,
-                            lastActiveDate = date,
-                            isAlive = true
-                        )
-                        dao.insertOrUpdateOfensiva(updated)
+                } else if (isProhibitedOnly) {
+                    val isNewDay = ofensiva.lastActiveDate != date
+                    val currentStreak = if (isNewDay) {
+                        if (ofensiva.streakCount == 0) 1 else ofensiva.streakCount + 1
                     } else {
-                        val hasItemsToday = habitsForToday.isNotEmpty() || tasksForToday.isNotEmpty() || rules.isNotEmpty()
-                        val allHabitsDone = habitsForToday.isEmpty() || habitsForToday.all { h -> habitLogsForToday.any { it.habitId == h.id && it.isCompleted } }
-                        val allTasksDone = tasksForToday.isEmpty() || tasksForToday.all { it.isCompleted }
-                        val allDone = hasItemsToday && allHabitsDone && allTasksDone
+                        if (ofensiva.streakCount == 0) 1 else ofensiva.streakCount
+                    }
+                    val updated = ofensiva.copy(
+                        streakCount = currentStreak,
+                        highestStreak = maxOf(ofensiva.highestStreak, currentStreak),
+                        lastProgressDate = date,
+                        lastActiveDate = date,
+                        isAlive = true
+                    )
+                    dao.insertOrUpdateOfensiva(updated)
+                } else {
+                    val hasItemsToday = habits.isNotEmpty() || tasks.isNotEmpty() || rules.isNotEmpty()
+                    val allHabitsDone = habits.isEmpty() || habits.all { h -> logs.any { it.habitId == h.id && it.isCompleted } }
+                    val allTasksDone = tasks.isEmpty() || tasks.all { it.isCompleted }
+                    val allDone = hasItemsToday && allHabitsDone && allTasksDone
 
-                        if (allDone) {
-                            if (ofensiva.lastProgressDate != date) {
-                                val newStreak = ofensiva.streakCount + 1
-                                val updated = ofensiva.copy(
-                                    streakCount = newStreak,
-                                    lastProgressDate = date,
-                                    lastActiveDate = date,
-                                    highestStreak = maxOf(ofensiva.highestStreak, newStreak),
-                                    isAlive = true
-                                )
-                                dao.insertOrUpdateOfensiva(updated)
-                            }
+                    if (allDone) {
+                        if (ofensiva.lastProgressDate != date) {
+                            val newStreak = ofensiva.streakCount + 1
+                            val updated = ofensiva.copy(
+                                streakCount = newStreak,
+                                lastProgressDate = date,
+                                lastActiveDate = date,
+                                highestStreak = maxOf(ofensiva.highestStreak, newStreak),
+                                isAlive = true
+                            )
+                            dao.insertOrUpdateOfensiva(updated)
+                        }
+                    } else {
+                        if (ofensiva.lastProgressDate == date) {
+                            val revokedStreak = maxOf(0, ofensiva.streakCount - 1)
+                            val updated = ofensiva.copy(
+                                streakCount = revokedStreak,
+                                lastProgressDate = null,
+                                isAlive = false,
+                                lastActiveDate = date
+                            )
+                            dao.insertOrUpdateOfensiva(updated)
                         } else {
-                            if (ofensiva.lastProgressDate == date) {
-                                val revokedStreak = maxOf(0, ofensiva.streakCount - 1)
-                                val updated = ofensiva.copy(
-                                    streakCount = revokedStreak,
-                                    lastProgressDate = null,
-                                    isAlive = false,
-                                    lastActiveDate = date
-                                )
-                                dao.insertOrUpdateOfensiva(updated)
-                            } else {
-                                dao.insertOrUpdateOfensiva(ofensiva.copy(isAlive = false, lastActiveDate = date))
-                            }
+                            dao.insertOrUpdateOfensiva(ofensiva.copy(isAlive = false, lastActiveDate = date))
                         }
                     }
                 }
